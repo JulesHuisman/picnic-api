@@ -1,0 +1,47 @@
+[project]
+name = "picnic-api"
+version = "0.1.0"
+description = "Unofficial Python client for the API of the Picnic online supermarket"
+readme = "README.md"
+license = "MIT"
+keywords = ["picnic", "api", "wrapper", "online", "supermarket"]
+authors = [
+    { name = "Jules Huisman", email = "huisman.jules@gmail.com" }
+]
+requires-python = ">=3.14"
+classifiers = ["Programming Language :: Python :: 3.14", "Typing :: Typed"]
+dependencies = [
+    "httpx>=0.28.1",
+    "pydantic>=2.13.5",
+]
+
+[project.urls]
+Upstream = "https://github.com/MRVDH/picnic-api"
+
+[build-system]
+requires = ["uv_build>=0.12.0,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.10",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/test_routes.py" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=picnic_api --cov-report=term-missing -m 'not integration'"
+markers = ["integration: hits the live Picnic API; needs PICNIC_AUTH_KEY"]
+
+[tool.coverage.report]
+fail_under = 90

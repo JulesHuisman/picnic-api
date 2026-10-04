@@ -20,6 +20,12 @@ def test_unknown_fields_survive_a_round_trip() -> None:
     assert Cart.model_validate(obj=payload).raw()["new_field"] == {"nested": True}
 
 
+def test_an_empty_cart_parses_without_analytics_items() -> None:
+    payload = samples.CART | {"items": [], "analytics_context_data": {}}
+
+    assert Cart.model_validate(obj=payload).analytics_context_data.items_list == []
+
+
 def test_aliased_keys_are_read_and_written_as_the_api_sends_them() -> None:
     request = ConsentRequest.model_validate(obj=samples.CONSENT_REQUEST)
 

@@ -75,7 +75,7 @@ class CartAnalyticsItem(PicnicModel):
 
 
 class CartAnalyticsContextData(PicnicModel):
-    items_list: list[CartAnalyticsItem]
+    items_list: list[CartAnalyticsItem] = Field(default_factory=list)
 
 
 class Cart(PicnicModel):

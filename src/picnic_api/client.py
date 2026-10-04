@@ -17,11 +17,11 @@ from picnic_api.models.common import CountryCode
 
 
 class PicnicClient(HttpClient):
-    """Client for the Picnic API, grouping the endpoints into domain services.
+    """Async client for the Picnic API, grouping the endpoints into domain services.
 
     All options are optional. `auth_key` skips the login step, `url` overrides the default
     `https://storefront-prod.<country>.picnicinternational.com/api/<api_version>`, `device_id` and `agent` set
-    the `x-picnic-did` and `x-picnic-agent` headers, and `session` injects a custom `httpx.Client`.
+    the `x-picnic-did` and `x-picnic-agent` headers, and `session` injects a custom `httpx.AsyncClient`.
     """
 
     def __init__(
@@ -33,7 +33,7 @@ class PicnicClient(HttpClient):
         url: str | None = None,
         device_id: str = DEFAULT_DEVICE_ID,
         agent: str = DEFAULT_AGENT,
-        session: httpx.Client | None = None,
+        session: httpx.AsyncClient | None = None,
     ) -> None:
         super().__init__(
             country_code=country_code,

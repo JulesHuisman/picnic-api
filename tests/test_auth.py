@@ -4,11 +4,11 @@ import json
 import httpx
 import pytest
 
-from picnic_api import PicnicClient, PicnicError
+from picnic_api import PicnicAuthError, PicnicClient, PicnicError
 from tests.conftest import BASE_URL, MockApi
 
 
-def test_login_stores_the_auth_key(client: PicnicClient, api: MockApi) -> None:
+async def test_login_stores_the_auth_key(client: PicnicClient, api: MockApi) -> None:
     api.queue(
         httpx.Response(
             status_code=200,
@@ -21,7 +21,7 @@ def test_login_stores_the_auth_key(client: PicnicClient, api: MockApi) -> None:
         )
     )
 
-    result = client.auth.login(username="sam@example.com", password="secret")
+    result = await client.auth.login(username="sam@example.com", password="secret")
 
     assert result.auth_key == "login-key"
     assert result.user_id == "user-1"
@@ -46,28 +46,28 @@ def test_login_stores_the_auth_key(client: PicnicClient, api: MockApi) -> None:
         (httpx.Response(status_code=200, json={}), "Login failed: No auth key received."),
     ],
 )
-def test_login_failures(client: PicnicClient, api: MockApi, response: httpx.Response, message: str) -> None:
+async def test_login_failures(client: PicnicClient, api: MockApi, response: httpx.Response, message: str) -> None:
     api.queue(response)
 
     with pytest.raises(PicnicError, match=message):
-        client.auth.login(username="sam@example.com", password="secret")
+        await client.auth.login(username="sam@example.com", password="secret")
 
     assert client.auth_key == "initial-auth-key"
 
 
-def test_verify_2fa_captures_the_new_auth_key(client: PicnicClient, api: MockApi) -> None:
+async def test_verify_2fa_captures_the_new_auth_key(client: PicnicClient, api: MockApi) -> None:
     api.queue(httpx.Response(status_code=204, headers={"x-picnic-auth": "new-2fa-auth-key"}))
 
-    result = client.auth.verify_2fa_code(code="123456")
+    result = await client.auth.verify_2fa_code(code="123456")
 
     assert result.auth_key == "new-2fa-auth-key"
     assert client.auth_key == "new-2fa-auth-key"
 
 
-def test_verify_2fa_sends_the_code_with_picnic_headers(client: PicnicClient, api: MockApi) -> None:
+async def test_verify_2fa_sends_the_code_with_picnic_headers(client: PicnicClient, api: MockApi) -> None:
     api.queue(httpx.Response(status_code=204, headers={"x-picnic-auth": "new-key"}))
 
-    client.auth.verify_2fa_code(code="654321")
+    await client.auth.verify_2fa_code(code="654321")
 
     assert api.last.method == "POST"
     assert str(api.last.url) == f"{BASE_URL}/user/2fa/verify"
@@ -85,8 +85,20 @@ def test_verify_2fa_sends_the_code_with_picnic_headers(client: PicnicClient, api
         (httpx.Response(status_code=500), "500 Internal Server Error"),
     ],
 )
-def test_verify_2fa_failures(client: PicnicClient, api: MockApi, response: httpx.Response, message: str) -> None:
+async def test_verify_2fa_failures(client: PicnicClient, api: MockApi, response: httpx.Response, message: str) -> None:
     api.queue(response)
 
     with pytest.raises(PicnicError, match=message):
-        client.auth.verify_2fa_code(code="000000")
+        await client.auth.verify_2fa_code(code="000000")
+
+
+async def test_rejected_credentials_raise_an_auth_error(client: PicnicClient, api: MockApi) -> None:
+    api.queue(
+        httpx.Response(status_code=401, json={"error": {"message": "Wrong password"}}),
+        httpx.Response(status_code=401, json={"error": {"message": "Invalid OTP"}}),
+    )
+
+    with pytest.raises(PicnicAuthError, match="Wrong password"):
+        await client.auth.login(username="sam@example.com", password="wrong")
+    with pytest.raises(PicnicAuthError, match="Invalid OTP"):
+        await client.auth.verify_2fa_code(code="000000")

@@ -8,14 +8,16 @@ class ContentService:
     def __init__(self, http: HttpClient) -> None:
         self._http = http
 
-    def get_faq_content(self) -> PmlDocument:
+    async def get_faq_content(self) -> PmlDocument:
         """Returns the FAQ / help section content as PML."""
         return PmlDocument.model_validate(
-            obj=self._http.send_request(method="GET", path="/content/faq", include_picnic_headers=True)
+            obj=await self._http.send_request(method="GET", path="/content/faq", include_picnic_headers=True)
         )
 
-    def get_search_empty_state(self) -> PmlDocument:
+    async def get_search_empty_state(self) -> PmlDocument:
         """Returns the content of the empty search results screen as PML."""
         return PmlDocument.model_validate(
-            obj=self._http.send_request(method="GET", path="/content/search_empty_state", include_picnic_headers=True)
+            obj=await self._http.send_request(
+                method="GET", path="/content/search_empty_state", include_picnic_headers=True
+            )
         )

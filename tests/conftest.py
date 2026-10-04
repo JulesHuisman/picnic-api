@@ -1,5 +1,6 @@
+import inspect
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 import httpx
@@ -7,7 +8,7 @@ import pytest
 
 from picnic_api import PicnicClient
 
-type Reply = httpx.Response | Callable[[httpx.Request], httpx.Response]
+type Reply = httpx.Response | Callable[[httpx.Request], httpx.Response | Awaitable[httpx.Response]]
 
 AUTH_KEY = "initial-auth-key"
 BASE_URL = "https://storefront-prod.nl.picnicinternational.com/api/15"
@@ -21,10 +22,11 @@ class MockApi:
         self.replies: list[Reply] = []
         self.fallback: Reply = lambda request: httpx.Response(status_code=200, json={})
 
-    def __call__(self, request: httpx.Request) -> httpx.Response:
+    async def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         reply = self.replies.pop(0) if self.replies else self.fallback
-        return reply if isinstance(reply, httpx.Response) else reply(request)
+        response = reply if isinstance(reply, httpx.Response) else reply(request)
+        return await response if inspect.isawaitable(response) else response
 
     def queue(self, *replies: Reply) -> None:
         """Queues replies for the next requests."""
@@ -50,6 +52,7 @@ def api() -> MockApi:
 
 
 @pytest.fixture
-def client(api: MockApi) -> Iterator[PicnicClient]:
-    with PicnicClient(auth_key=AUTH_KEY, session=httpx.Client(transport=httpx.MockTransport(handler=api))) as picnic:
+async def client(api: MockApi) -> AsyncIterator[PicnicClient]:
+    session = httpx.AsyncClient(transport=httpx.MockTransport(handler=api))
+    async with PicnicClient(auth_key=AUTH_KEY, session=session) as picnic:
         yield picnic

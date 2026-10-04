@@ -5,10 +5,20 @@ from picnic_api.models.rsc import PageFormat
 AGE_VERIFICATION_TYPE = "LEGACY_ALCOHOL_AGE_VERIFICATION_REQUIRED"
 CART_HAS_ISSUES = "CART_HAS_ISSUES"
 DEFAULT_ISSUE_MESSAGE = "Cart has issues"
+UNAUTHORIZED = 401
 
 
 class PicnicError(Exception):
     """Raised when the Picnic API rejects a request or returns unusable data."""
+
+
+class PicnicAuthError(PicnicError):
+    """Raised when the API rejects the credentials or the auth key (HTTP 401), e.g. when the auth key expired."""
+
+
+def error_class(status_code: int) -> type[PicnicError]:
+    """Returns `PicnicAuthError` for HTTP 401 and `PicnicError` for any other failure."""
+    return PicnicAuthError if status_code == UNAUTHORIZED else PicnicError
 
 
 class CheckoutIssueError(PicnicError):

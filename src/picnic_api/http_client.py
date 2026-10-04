@@ -4,7 +4,7 @@ from typing import Any, Literal, Self
 
 import httpx
 
-from picnic_api.errors import PicnicError, parse_checkout_issue_error
+from picnic_api.errors import error_class, parse_checkout_issue_error
 from picnic_api.models.common import CountryCode
 
 type HttpMethod = Literal["GET", "POST", "PUT", "DELETE"]
@@ -29,7 +29,7 @@ def describe_error(response: httpx.Response) -> str:
 
 
 class HttpClient:
-    """Base HTTP client that handles request construction, authentication headers and errors."""
+    """Async base HTTP client that handles request construction, authentication headers and errors."""
 
     def __init__(
         self,
@@ -40,7 +40,7 @@ class HttpClient:
         url: str | None = None,
         device_id: str = DEFAULT_DEVICE_ID,
         agent: str = DEFAULT_AGENT,
-        session: httpx.Client | None = None,
+        session: httpx.AsyncClient | None = None,
     ) -> None:
         self.country_code = country_code
         self.api_version = api_version
@@ -48,17 +48,17 @@ class HttpClient:
         self.url = url or f"https://storefront-prod.{country_code.lower()}.picnicinternational.com/api/{api_version}"
         self.device_id = device_id
         self.agent = agent
-        self.session = session or httpx.Client(timeout=DEFAULT_TIMEOUT_SECONDS)
+        self.session = session or httpx.AsyncClient(timeout=DEFAULT_TIMEOUT_SECONDS)
 
-    def __enter__(self) -> Self:
+    async def __aenter__(self) -> Self:
         return self
 
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
+    async def __aexit__(self, *exc_info: object) -> None:
+        await self.close()
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Closes the underlying HTTP session."""
-        self.session.close()
+        await self.session.aclose()
 
     @property
     def base_headers(self) -> dict[str, str]:
@@ -77,7 +77,7 @@ class HttpClient:
         """The app identification headers some routes require."""
         return {"x-picnic-agent": self.agent, "x-picnic-did": self.device_id}
 
-    def send_request(
+    async def send_request(
         self,
         method: HttpMethod,
         path: str,
@@ -93,7 +93,7 @@ class HttpClient:
 
         Returns the parsed JSON body, the raw bytes when `is_image_request` is set, the text of a React Server
         Components payload (`text/x-component`), or None for an empty body. Raises `CheckoutIssueError` for cart
-        issues and `PicnicError` for any other failed response.
+        issues, `PicnicAuthError` for HTTP 401 and `PicnicError` for any other failed response.
         """
         is_raw_body = isinstance(data, (bytes, bytearray, memoryview))
         headers = self.base_headers | (self.picnic_headers if include_picnic_headers else {})
@@ -104,7 +104,7 @@ class HttpClient:
             content = None if data is None else json.dumps(obj=data, separators=(",", ":")).encode()
 
         request_url = path if ABSOLUTE_URL.match(path) else f"{self.url}{path}"
-        response = self.session.request(method=method, url=request_url, headers=headers, content=content)
+        response = await self.session.request(method=method, url=request_url, headers=headers, content=content)
 
         if response.is_error:
             self._raise_for_error(response=response)
@@ -122,7 +122,9 @@ class HttpClient:
             error_data = response.json()
         except ValueError:
             body = f" - {response.text}" if response.text else ""
-            raise PicnicError(f"{response.status_code} {response.reason_phrase}{body}") from None
+            raise error_class(status_code=response.status_code)(
+                f"{response.status_code} {response.reason_phrase}{body}"
+            ) from None
         if checkout_issue := parse_checkout_issue_error(body=error_data):
             raise checkout_issue
-        raise PicnicError(describe_error(response=response))
+        raise error_class(status_code=response.status_code)(describe_error(response=response))

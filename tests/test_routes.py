@@ -145,7 +145,7 @@ ROUTES: list[tuple[str, Call, Any, str, str, Any, bool, type | None]] = [
     argnames=("call", "reply", "method", "path", "body", "picnic_headers", "returns"),
     argvalues=[pytest.param(*route[1:], id=route[0]) for route in ROUTES],
 )
-def test_route(
+async def test_route(
     client: PicnicClient,
     api: MockApi,
     call: Call,
@@ -159,7 +159,7 @@ def test_route(
     if reply is not None:
         api.queue_json(reply)
 
-    result = call(client)
+    result = await call(client)
 
     request = api.last
     assert request.method == method

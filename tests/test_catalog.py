@@ -183,14 +183,14 @@ def test_extract_product_details_falls_back_to_the_price_component() -> None:
     assert details.display_price == 349
 
 
-def test_find_by_id_follows_child_links_only() -> None:
+async def test_find_by_id_follows_child_links_only() -> None:
     tree = {"id": "root", "child": {"children": [{"id": "deep"}]}, "other": {"id": "hidden"}}
 
     assert find_by_id(node=tree, node_id="deep") == {"id": "deep"}
     assert find_by_id(node=tree, node_id="hidden") is None
 
 
-def test_search_returns_selling_units(client: PicnicClient, api: MockApi) -> None:
+async def test_search_returns_selling_units(client: PicnicClient, api: MockApi) -> None:
     api.queue_json(
         {
             "layout": {
@@ -204,7 +204,7 @@ def test_search_returns_selling_units(client: PicnicClient, api: MockApi) -> Non
         }
     )
 
-    results = client.catalog.search(query="Affligem blond")
+    results = await client.catalog.search(query="Affligem blond")
 
     assert [unit.name for unit in results] == ["Affligem blond", "Affligem blond 0.0"]
     assert api.last.url.path.endswith("/pages/search-page-results")
@@ -212,21 +212,21 @@ def test_search_returns_selling_units(client: PicnicClient, api: MockApi) -> Non
     assert "x-picnic-agent" in api.last.headers
 
 
-def test_get_product_details_fetches_and_parses_the_page(client: PicnicClient, api: MockApi) -> None:
+async def test_get_product_details_fetches_and_parses_the_page(client: PicnicClient, api: MockApi) -> None:
     api.queue_json(full_product_page().raw())
 
-    details = client.catalog.get_product_details(product_id=PRODUCT_ID)
+    details = await client.catalog.get_product_details(product_id=PRODUCT_ID)
 
     assert details.name == "Blond"
     assert api.last.url.params["id"] == PRODUCT_ID
 
 
-def test_images(client: PicnicClient, api: MockApi) -> None:
+async def test_images(client: PicnicClient, api: MockApi) -> None:
     api.queue(httpx.Response(status_code=200, content=b"png"), httpx.Response(status_code=200, content=b"png"))
 
-    assert client.catalog.get_image(image_id="abc", size="small") == b"png"
+    assert await client.catalog.get_image(image_id="abc", size="small") == b"png"
     assert str(api.last.url) == "https://storefront-prod.nl.picnicinternational.com/static/images/abc/small.png"
-    assert client.catalog.get_image_as_data_uri(image_id="abc", size="small") == "data:image/png;base64,cG5n"
+    assert await client.catalog.get_image_as_data_uri(image_id="abc", size="small") == "data:image/png;base64,cG5n"
 
 
 def test_extract_product_details_finds_a_wrapped_name() -> None:

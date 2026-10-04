@@ -3,12 +3,13 @@
 Unofficial Python client for the API of the [Picnic](https://picnic.app) online supermarket. A Python port of
 [MRVDH/picnic-api](https://github.com/MRVDH/picnic-api) (v4.10.0). Not affiliated with Picnic.
 
-Requires Python 3.14. Responses are parsed into [Pydantic](https://docs.pydantic.dev) models.
+Requires Python 3.14. The client is async (built on `httpx.AsyncClient`). Responses are parsed into
+[Pydantic](https://docs.pydantic.dev) models.
 
 ## Installation
 
 ```bash
-uv add git+https://github.com/<you>/picnic-api
+uv add git+https://github.com/JulesHuisman/picnic-api
 ```
 
 ## Quick start
@@ -28,7 +29,8 @@ client = PicnicClient(
 )
 ```
 
-`PicnicClient` is a context manager that closes its HTTP session on exit. Pass `session=httpx.Client(...)` to
+`PicnicClient` is an async context manager (`async with PicnicClient() as client:`) that closes its HTTP session on
+exit. Pass `session=httpx.AsyncClient(...)` to
 configure timeouts, proxies or a mock transport.
 
 ### Authentication
@@ -37,10 +39,22 @@ configure timeouts, proxies or a mock transport.
 `second_factor_authentication_required`, request and verify a 2FA code:
 
 ```python
-result = client.auth.login(username="email", password="password")
+result = await client.auth.login(username="email", password="password")
 if result.second_factor_authentication_required:
-    client.auth.generate_2fa_code(channel="SMS")
-    client.auth.verify_2fa_code(code="123456")
+    await client.auth.generate_2fa_code(channel="SMS")
+    await client.auth.verify_2fa_code(code="123456")
+```
+
+Login and 2FA failures with HTTP 401 raise `PicnicAuthError`, as does any request made with an expired or revoked
+auth key, so callers can ask the user to log in again:
+
+```python
+from picnic_api import PicnicAuthError
+
+try:
+    cart = await client.cart.get_cart()
+except PicnicAuthError:
+    ...  # the auth key is no longer valid
 ```
 
 ### Usage examples
@@ -48,16 +62,16 @@ if result.second_factor_authentication_required:
 ```python
 from picnic_api.domains.cart.models import AddProductsItem
 
-results = client.catalog.search(query="Affligem blond")
-client.cart.add_product_to_cart(product_id="s1001524", count=2)
-client.cart.add_products_to_cart(
+results = await client.catalog.search(query="Affligem blond")
+await client.cart.add_product_to_cart(product_id="s1001524", count=2)
+await client.cart.add_products_to_cart(
     products=[
         AddProductsItem(product_id="s11295810", quantity=2),
         AddProductsItem(product_id="s10000123", quantity=1),
     ]
 )
-slots = client.cart.get_delivery_slots()
-delivery = client.delivery.get_delivery(delivery_id="delivery-id")
+slots = await client.cart.get_delivery_slots()
+delivery = await client.delivery.get_delivery(delivery_id="delivery-id")
 ```
 
 ### Checkout issues
@@ -68,13 +82,13 @@ check, which is resolved by retrying with its `resolve_key`:
 ```python
 from picnic_api import CheckoutIssueError
 
-cart = client.cart.get_cart()
+cart = await client.cart.get_cart()
 try:
-    checkout = client.cart.start_checkout(mts=cart.mts)
+    checkout = await client.cart.start_checkout(mts=cart.mts)
 except CheckoutIssueError as issue:
     if not issue.is_age_verification_issue():
         raise
-    checkout = client.cart.start_checkout(mts=cart.mts, resolve_key=issue.resolve_key)
+    checkout = await client.cart.start_checkout(mts=cart.mts, resolve_key=issue.resolve_key)
 ```
 
 ### Pages (Fusion and RSC)
@@ -88,9 +102,9 @@ Each method raises `UnexpectedPageFormatError` for the other format:
 from picnic_api import UnexpectedPageFormatError
 
 try:
-    page = client.app.get_page(page_id="home_page_root")
+    page = await client.app.get_page(page_id="home_page_root")
 except UnexpectedPageFormatError as error:
-    rsc_page = client.app.get_rsc_page(page_id=error.page_id)
+    rsc_page = await client.app.get_rsc_page(page_id=error.page_id)
 ```
 
 Known RSC pages: `category-tree-root`, `profile-root` and `promo-group-deep-dive?promo_group_id=<id>`.
@@ -102,11 +116,11 @@ envelope and all other responses are Pydantic models that keep unknown fields, s
 ### Custom requests
 
 For endpoints not covered by a service, use `send_request` directly. It returns the parsed JSON (or the raw text of
-an RSC payload) and raises `PicnicError` on failures:
+an RSC payload) and raises `PicnicError` on failures (`PicnicAuthError` for HTTP 401):
 
 ```python
-client.send_request(method="GET", path="/unknown/route")
-client.send_request(method="POST", path="/invite/friend", data={"email": "friend@example.com"})
+await client.send_request(method="GET", path="/unknown/route")
+await client.send_request(method="POST", path="/invite/friend", data={"email": "friend@example.com"})
 ```
 
 ## Services
@@ -131,10 +145,10 @@ Models live next to each service in `src/picnic_api/domains/<service>/models.py`
 Catalog and user-defined recipes share `RecipeSummary`, `RecipeDetails` and `RecipeIngredient`:
 
 ```python
-saved = client.recipe.get_saved_recipes()
-own = client.recipe.get_user_defined_recipes()
+saved = await client.recipe.get_saved_recipes()
+own = await client.recipe.get_user_defined_recipes()
 if saved:
-    recipe = client.recipe.get_recipe(recipe_id=saved[0].id, portions=2)
+    recipe = await client.recipe.get_recipe(recipe_id=saved[0].id, portions=2)
 ```
 
 Omit `portions` to use the stored default. Pass `resolve_ingredient_names=True` to look up names missing from the

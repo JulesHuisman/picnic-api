@@ -20,25 +20,25 @@ class CatalogService:
     def __init__(self, http: HttpClient) -> None:
         self._http = http
 
-    def search(self, query: str) -> list[SellingUnit]:
+    async def search(self, query: str) -> list[SellingUnit]:
         """Searches for products matching the query."""
-        results = self._http.send_request(
+        results = await self._http.send_request(
             method="GET",
             path=f"/pages/search-page-results?search_term={quote(query, safe='')}",
             include_picnic_headers=True,
         )
         return SELLING_UNITS.validate_python(find_all(node=results, key="sellingUnit"))
 
-    def get_suggestions(self, query: str) -> list[SearchSuggestion]:
+    async def get_suggestions(self, query: str) -> list[SearchSuggestion]:
         """Returns search suggestions for the query."""
         return SEARCH_SUGGESTIONS.validate_python(
-            self._http.send_request(method="GET", path=f"/suggest?search_term={quote(query, safe='')}")
+            await self._http.send_request(method="GET", path=f"/suggest?search_term={quote(query, safe='')}")
         )
 
-    def get_product_details_page(self, product_id: str) -> FusionPage:
+    async def get_product_details_page(self, product_id: str) -> FusionPage:
         """Returns the raw product details page."""
         return FusionPage.model_validate(
-            obj=self._http.send_request(
+            obj=await self._http.send_request(
                 method="GET",
                 path=(
                     f"/pages/product-details-page-root?id={product_id}"
@@ -48,22 +48,24 @@ class CatalogService:
             )
         )
 
-    def get_product_details(self, product_id: str) -> ProductDetails:
+    async def get_product_details(self, product_id: str) -> ProductDetails:
         """Returns structured product details parsed from the product details page.
 
         Experimental: this parses dynamic Fusion page structures and may break when Picnic changes its layout.
         Use `get_product_details_page` for the raw page.
         """
-        return extract_product_details(product_id=product_id, page=self.get_product_details_page(product_id=product_id))
+        return extract_product_details(
+            product_id=product_id, page=await self.get_product_details_page(product_id=product_id)
+        )
 
-    def get_image(self, image_id: str, size: ImageSize) -> bytes:
+    async def get_image(self, image_id: str, size: ImageSize) -> bytes:
         """Returns a product image as PNG bytes."""
         static_url = self._http.url.split("/api/")[0]
-        return self._http.send_request(
+        return await self._http.send_request(
             method="GET", path=f"{static_url}/static/images/{image_id}/{size}.png", is_image_request=True
         )
 
-    def get_image_as_data_uri(self, image_id: str, size: ImageSize) -> str:
+    async def get_image_as_data_uri(self, image_id: str, size: ImageSize) -> str:
         """Returns a product image as a PNG data URI."""
-        image = self.get_image(image_id=image_id, size=size)
+        image = await self.get_image(image_id=image_id, size=size)
         return f"data:image/png;base64,{base64.b64encode(image).decode()}"

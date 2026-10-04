@@ -14,11 +14,11 @@ class AppService:
     def __init__(self, http: HttpClient) -> None:
         self._http = http
 
-    def get_bootstrap_data(self) -> BootstrapData:
+    async def get_bootstrap_data(self) -> BootstrapData:
         """Returns the bootstrap data: tab bar configuration, third-party SDK configs and feature flags."""
-        return BootstrapData.model_validate(obj=self._http.send_request(method="GET", path="/bootstrap"))
+        return BootstrapData.model_validate(obj=await self._http.send_request(method="GET", path="/bootstrap"))
 
-    def get_page(self, page_id: str) -> FusionPage:
+    async def get_page(self, page_id: str) -> FusionPage:
         """Returns a Fusion page by its page id, optionally followed by `?` and query parameters.
 
         Known page ids: `home_page_root`, `purchases-page-root`, `meals-page-root`, `slot-selector-root`,
@@ -30,28 +30,28 @@ class AppService:
         Raises `UnexpectedPageFormatError` for pages served as RSC (known: `category-tree-root`, `profile-root`,
         `promo-group-deep-dive?promo_group_id=<id>`); fetch those with `get_rsc_page`.
         """
-        page = self._fetch_page(page_id=page_id)
+        page = await self._fetch_page(page_id=page_id)
         if isinstance(page, str):
             raise UnexpectedPageFormatError(page_id=page_id, received_format="rsc")
         return FusionPage.model_validate(obj=page)
 
-    def get_rsc_page(self, page_id: str) -> RscPage:
+    async def get_rsc_page(self, page_id: str) -> RscPage:
         """Returns a page served as a React Server Components payload, split into its rows.
 
         Raises `UnexpectedPageFormatError` when the page is served as a Fusion page; use `get_page` for those.
         """
-        page = self._fetch_page(page_id=page_id)
+        page = await self._fetch_page(page_id=page_id)
         if not isinstance(page, str):
             raise UnexpectedPageFormatError(page_id=page_id, received_format="fusion")
         return parse_rsc_payload(payload=page)
 
-    def resolve_deeplink(self, url: str) -> DeeplinkResolution:
+    async def resolve_deeplink(self, url: str) -> DeeplinkResolution:
         """Resolves a Picnic deeplink (e.g. `https://picnic.app/nl/deeplink/...`) to its target."""
         return DeeplinkResolution.model_validate(
-            obj=self._http.send_request(
+            obj=await self._http.send_request(
                 method="POST", path="/deeplink/resolve", data={"url": url}, include_picnic_headers=True
             )
         )
 
-    def _fetch_page(self, page_id: str) -> Any:
-        return self._http.send_request(method="GET", path=f"/pages/{page_id}", include_picnic_headers=True)
+    async def _fetch_page(self, page_id: str) -> Any:
+        return await self._http.send_request(method="GET", path=f"/pages/{page_id}", include_picnic_headers=True)

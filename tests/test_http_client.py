@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from picnic_api import CheckoutIssueError, PicnicClient, PicnicError
+from picnic_api import CheckoutIssueError, PicnicAuthError, PicnicClient, PicnicError
 from picnic_api.http_client import HttpClient
 from tests.conftest import BASE_URL, MockApi
 
@@ -31,14 +31,14 @@ def test_custom_options() -> None:
     assert http.picnic_headers == {"x-picnic-agent": "agent", "x-picnic-did": "did"}
 
 
-def test_api_version_is_part_of_the_default_url() -> None:
+async def test_api_version_is_part_of_the_default_url() -> None:
     assert HttpClient(api_version="16").url.endswith("/api/16")
 
 
-def test_sends_json_with_base_headers(client: PicnicClient, api: MockApi) -> None:
+async def test_sends_json_with_base_headers(client: PicnicClient, api: MockApi) -> None:
     api.queue_json({"ok": True})
 
-    result = client.send_request(method="POST", path="/invite/friend", data={"email": "friend@example.com"})
+    result = await client.send_request(method="POST", path="/invite/friend", data={"email": "friend@example.com"})
 
     assert result == {"ok": True}
     assert str(api.last.url) == f"{BASE_URL}/invite/friend"
@@ -47,37 +47,37 @@ def test_sends_json_with_base_headers(client: PicnicClient, api: MockApi) -> Non
     assert api.last.headers["User-Agent"] == "okhttp/4.9.0"
 
 
-def test_absolute_urls_are_used_as_is(client: PicnicClient, api: MockApi) -> None:
-    client.send_request(method="GET", path="https://example.com/elsewhere")
+async def test_absolute_urls_are_used_as_is(client: PicnicClient, api: MockApi) -> None:
+    await client.send_request(method="GET", path="https://example.com/elsewhere")
 
     assert str(api.last.url) == "https://example.com/elsewhere"
 
 
-def test_bytes_are_sent_raw_with_their_content_type(client: PicnicClient, api: MockApi) -> None:
-    client.send_request(method="POST", path="/upload", data=b"\x01\x02", content_type="image/png")
+async def test_bytes_are_sent_raw_with_their_content_type(client: PicnicClient, api: MockApi) -> None:
+    await client.send_request(method="POST", path="/upload", data=b"\x01\x02", content_type="image/png")
     assert api.last.content == b"\x01\x02"
     assert api.last.headers["Content-Type"] == "image/png"
 
-    client.send_request(method="POST", path="/upload", data=bytearray(b"\x03"))
+    await client.send_request(method="POST", path="/upload", data=bytearray(b"\x03"))
     assert api.last.headers["Content-Type"] == "application/octet-stream"
 
 
-def test_image_requests_return_bytes(client: PicnicClient, api: MockApi) -> None:
+async def test_image_requests_return_bytes(client: PicnicClient, api: MockApi) -> None:
     api.queue(httpx.Response(status_code=200, content=b"\x89PNG"))
 
-    assert client.send_request(method="GET", path="/image", is_image_request=True) == b"\x89PNG"
+    assert await client.send_request(method="GET", path="/image", is_image_request=True) == b"\x89PNG"
 
 
-def test_rsc_payloads_return_text(client: PicnicClient, api: MockApi) -> None:
+async def test_rsc_payloads_return_text(client: PicnicClient, api: MockApi) -> None:
     api.queue(httpx.Response(status_code=200, text='0:{"a":1}', headers={"content-type": "text/x-component"}))
 
-    assert client.send_request(method="GET", path="/pages/x") == '0:{"a":1}'
+    assert await client.send_request(method="GET", path="/pages/x") == '0:{"a":1}'
 
 
-def test_empty_bodies_return_none(client: PicnicClient, api: MockApi) -> None:
+async def test_empty_bodies_return_none(client: PicnicClient, api: MockApi) -> None:
     api.queue(httpx.Response(status_code=204))
 
-    assert client.send_request(method="POST", path="/user/logout") is None
+    assert await client.send_request(method="POST", path="/user/logout") is None
 
 
 @pytest.mark.parametrize(
@@ -90,18 +90,25 @@ def test_empty_bodies_return_none(client: PicnicClient, api: MockApi) -> None:
         (httpx.Response(status_code=500), "500 Internal Server Error"),
     ],
 )
-def test_errors_carry_the_api_message(
+async def test_errors_carry_the_api_message(
     client: PicnicClient, api: MockApi, response: httpx.Response, message: str
 ) -> None:
     api.queue(response)
 
     with pytest.raises(PicnicError) as error:
-        client.send_request(method="GET", path="/cart")
+        await client.send_request(method="GET", path="/cart")
 
     assert str(error.value) == message
 
 
-def test_cart_issues_raise_a_checkout_issue_error(client: PicnicClient, api: MockApi) -> None:
+async def test_unauthorized_responses_raise_an_auth_error(client: PicnicClient, api: MockApi) -> None:
+    api.queue(httpx.Response(status_code=401, json={"error": {"message": "Auth key expired"}}))
+
+    with pytest.raises(PicnicAuthError, match="Auth key expired"):
+        await client.send_request(method="GET", path="/cart")
+
+
+async def test_cart_issues_raise_a_checkout_issue_error(client: PicnicClient, api: MockApi) -> None:
     api.queue(
         httpx.Response(
             status_code=400,
@@ -119,16 +126,16 @@ def test_cart_issues_raise_a_checkout_issue_error(client: PicnicClient, api: Moc
     )
 
     with pytest.raises(CheckoutIssueError) as error:
-        client.cart.start_checkout(mts=1)
+        await client.cart.start_checkout(mts=1)
 
     assert error.value.resolve_key == "age_verified"
     assert error.value.is_age_verification_issue()
 
 
-def test_context_manager_closes_the_session() -> None:
-    session = httpx.Client()
+async def test_context_manager_closes_the_session() -> None:
+    session = httpx.AsyncClient()
 
-    with PicnicClient(session=session):
+    async with PicnicClient(session=session):
         assert not session.is_closed
 
     assert session.is_closed

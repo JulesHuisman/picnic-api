@@ -7,6 +7,12 @@ from picnic_api.models.rsc import RscPage
 
 ROW_PATTERN = re.compile(r"^([0-9a-f]+):(I?)(.*)$")
 SHARED_CHUNK_PREFIXES = ("client-components.", "shared-node_modules_")
+UNDEFINED = "$undefined"
+
+
+def drop_undefined(obj: dict[str, Any]) -> dict[str, Any]:
+    """Leaves out the keys RSC marks `$undefined`, as JavaScript does."""
+    return {key: value for key, value in obj.items() if value != UNDEFINED}
 
 
 def parse_rsc_payload(payload: str) -> RscPage:
@@ -14,7 +20,7 @@ def parse_rsc_payload(payload: str) -> RscPage:
 
     The payload holds newline-separated rows of the form `<hex id>:<payload>`. JSON rows go to `rows`, client
     component references (`I[...]`) to `modules`. Hints, text chunks and other non-JSON rows carry no page data
-    and are skipped.
+    and are skipped. Keys whose value is `$undefined` are left out.
     """
     rows = {}
     modules = {}
@@ -24,7 +30,7 @@ def parse_rsc_payload(payload: str) -> RscPage:
             continue
         row_id, import_marker, value = match.groups()
         try:
-            parsed = json.loads(value)
+            parsed = json.loads(value, object_hook=drop_undefined)
         except json.JSONDecodeError:
             continue
         (modules if import_marker else rows)[row_id] = parsed

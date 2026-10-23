@@ -39,6 +39,12 @@ async def test_parse_rsc_payload_skips_non_json_rows_and_non_rows() -> None:
     assert page.modules == {}
 
 
+def test_parse_rsc_payload_drops_undefined_props() -> None:
+    page = parse_rsc_payload(payload='0:["$","$L1",null,{"a":"$undefined","b":{"c":"$undefined","d":1}}]')
+
+    assert page.rows["0"] == ["$", "$L1", None, {"b": {"d": 1}}]
+
+
 async def test_get_page_returns_a_fusion_page(client: PicnicClient, api: MockApi) -> None:
     api.queue_json(samples.FUSION_PAGE)
 

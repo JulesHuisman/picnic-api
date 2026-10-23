@@ -295,6 +295,20 @@ async def test_search_caches_the_action_id_per_chunk(client: PicnicClient, api: 
     assert len(api.requests) == 6
 
 
+async def test_search_without_supermarket_results_returns_nothing(client: PicnicClient, api: MockApi) -> None:
+    api.queue(
+        SEARCH_PAGE,
+        httpx.Response(
+            status_code=200,
+            json=samples.BOOTSTRAP | {"in_app_feature_config": {"client_component_cdn_base_url": "https://cdn.test"}},
+        ),
+        httpx.Response(status_code=200, content=b"act_fetchSearchResults_abc123"),
+        rsc('0:["$","$L1",null,{"storeResults":{"SUPERMARKET":"$undefined","MEALS":{"sections":[]}}}]'),
+    )
+
+    assert await client.catalog.search(query="diepvries rood fruit gemengde bessen") == []
+
+
 async def test_search_raises_when_the_page_has_no_action(client: PicnicClient, api: MockApi) -> None:
     api.queue(
         SEARCH_PAGE,

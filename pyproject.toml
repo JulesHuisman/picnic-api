@@ -1,6 +1,6 @@
 [project]
 name = "picnic-api"
-version = "0.2.0"
+version = "0.2.1"
 description = "Unofficial Python client for the API of the Picnic online supermarket"
 readme = "README.md"
 license = "MIT"

@@ -130,6 +130,7 @@ class CartPreCheckoutUpsellConfig(PicnicModel):
 
 class InAppFeatureConfig(PicnicModel):
     cart_pre_checkout_upsell_check: CartPreCheckoutUpsellConfig | None = None
+    client_component_cdn_base_url: str | None = None
 
 
 class BootstrapData(PicnicModel):

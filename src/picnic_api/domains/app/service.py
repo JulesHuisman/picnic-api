@@ -1,8 +1,11 @@
+import json
+import re
 from typing import Any
+from urllib.parse import quote
 
 from picnic_api.domains.app.models import DeeplinkResolution
-from picnic_api.domains.app.rsc import parse_rsc_payload
-from picnic_api.errors import UnexpectedPageFormatError
+from picnic_api.domains.app.rsc import module_chunks, parse_rsc_payload
+from picnic_api.errors import PicnicError, UnexpectedPageFormatError
 from picnic_api.http_client import HttpClient
 from picnic_api.models.fusion import BootstrapData, FusionPage
 from picnic_api.models.rsc import RscPage
@@ -13,6 +16,7 @@ class AppService:
 
     def __init__(self, http: HttpClient) -> None:
         self._http = http
+        self._action_ids: dict[tuple[str, str], str | None] = {}
 
     async def get_bootstrap_data(self) -> BootstrapData:
         """Returns the bootstrap data: tab bar configuration, third-party SDK configs and feature flags."""
@@ -44,6 +48,44 @@ class AppService:
         if not isinstance(page, str):
             raise UnexpectedPageFormatError(page_id=page_id, received_format="fusion")
         return parse_rsc_payload(payload=page)
+
+    async def find_server_action_id(self, page: RscPage, module_path: str, action_name: str) -> str | None:
+        """Finds the id of a server action, such as `act_fetchSearchResults_169995c7443462f7`, the way the app does.
+
+        The id sits in the client chunks of the component whose path ends with `module_path` and changes when
+        Picnic deploys. Chunk names carry a content hash, so the result per chunk is cached for this client.
+        """
+        pattern = re.compile(rf"act_{action_name}_[0-9a-f]+")
+        for chunk in module_chunks(page=page, module_path=module_path):
+            key = (chunk, action_name)
+            if key not in self._action_ids:
+                match = pattern.search(await self._client_chunk(chunk=chunk))
+                self._action_ids[key] = match.group(0) if match else None
+            if self._action_ids[key]:
+                return self._action_ids[key]
+        return None
+
+    async def run_server_action(self, action_id: str, args: list[Any]) -> RscPage:
+        """Runs a server action of an RSC page, with the arguments its client component passes, and returns the
+        RSC payload it responds with."""
+        payload = await self._http.send_request(
+            method="POST",
+            path=f"/pages/action/{quote(action_id, safe='')}",
+            data={"params": json.dumps(args)},
+            include_picnic_headers=True,
+        )
+        return parse_rsc_payload(payload=payload)
+
+    async def _client_chunk(self, chunk: str) -> str:
+        """Downloads a client chunk from the CDN in the bootstrap data. Chunks are public, so no auth key is sent."""
+        config = (await self.get_bootstrap_data()).in_app_feature_config
+        base_url = config.client_component_cdn_base_url if config else None
+        if not base_url:
+            raise PicnicError("The bootstrap data has no client_component_cdn_base_url")
+        response = await self._http.session.get(url=f"{base_url.rstrip('/')}/{chunk}.script.bundle")
+        if response.is_error:
+            raise PicnicError(f"Client chunk {chunk}: {response.status_code} {response.reason_phrase}")
+        return response.text
 
     async def resolve_deeplink(self, url: str) -> DeeplinkResolution:
         """Resolves a Picnic deeplink (e.g. `https://picnic.app/nl/deeplink/...`) to its target."""

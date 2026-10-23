@@ -10,7 +10,7 @@ from picnic_api.domains.catalog.models import (
 )
 from picnic_api.json_tree import find_all, iter_objects
 from picnic_api.models.common import PicnicModel
-from picnic_api.models.fusion import FusionPage, PriceRange
+from picnic_api.models.fusion import FusionPage, PriceRange, SellingUnit
 
 COLOR_MARKUP = re.compile(r"#\([A-Za-z0-9#_]+\)")
 ALLERGEN_HEADING = re.compile(r"^bevat(\s+mogelijk)?$", re.IGNORECASE)
@@ -94,6 +94,48 @@ def extract_product_details(product_id: str, page: FusionPage) -> ProductDetails
         bundles=_extract_bundles(body=body),
         price_ranges=price_ranges if price_ranges is not None else _extract_price_ranges_from_expressions(raw=raw),
         similar_products=_extract_similar_products(body=body),
+    )
+
+
+def extract_search_results(results: dict[str, Any]) -> list[SellingUnit]:
+    """Returns the supermarket products of a `fetchSearchResults` response, once each, in section order."""
+    tiles = (
+        tile
+        for section in ((results.get("storeResults") or {}).get("SUPERMARKET") or {}).get("sections") or []
+        for tile in section.get("items") or []
+    )
+    units: dict[str, SellingUnit] = {}
+    for tile in tiles:
+        unit = selling_unit_from_tile(tile=tile)
+        if unit:
+            units.setdefault(unit.id, unit)
+    return list(units.values())
+
+
+def selling_unit_from_tile(tile: dict[str, Any]) -> SellingUnit | None:
+    """Reads a product tile (`type: "sellable"`) of an RSC page. Returns None for other tiles.
+
+    Tiles carry the price in euros (`priceValue`) and the price tiers in cents; without a price the lowest tier
+    is the display price.
+    """
+    name = (tile.get("title") or {}).get("title")
+    if tile.get("type") != "sellable" or not tile.get("id") or not name:
+        return None
+    images = tile.get("images") or {}
+    price = tile.get("price") or {}
+    ranges = [
+        PriceRange(price=tier["price"], from_quantity=tier["fromQuantity"]) for tier in price.get("priceRanges") or []
+    ]
+    value = price.get("priceValue")
+    lowest_tier = min(ranges, key=lambda tier: tier.from_quantity).price if ranges else None
+    return SellingUnit(
+        id=tile["id"],
+        name=name,
+        image_id=(images.get("primaryImage") or images.get("sellingUnitImage") or {}).get("imageId"),
+        display_price=round(value * 100) if isinstance(value, int | float) else lowest_tier,
+        unit_quantity=", ".join(suffix["text"] for suffix in tile.get("suffixes") or [] if suffix.get("type") == "TEXT")
+        or None,
+        price_ranges=ranges or None,
     )
 
 

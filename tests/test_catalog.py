@@ -1,10 +1,13 @@
+import json
 from typing import Any
 
 import httpx
+import pytest
 
-from picnic_api import PicnicClient
+from picnic_api import PicnicClient, PicnicError
 from picnic_api.domains.catalog.helpers import extract_product_details, find_by_id
-from picnic_api.models.fusion import FusionPage, PriceRange
+from picnic_api.models.fusion import FusionPage, PriceRange, SellingUnit
+from tests import samples
 from tests.conftest import MockApi
 
 PRODUCT_ID = "s1001524"
@@ -190,26 +193,141 @@ async def test_find_by_id_follows_child_links_only() -> None:
     assert find_by_id(node=tree, node_id="hidden") is None
 
 
-async def test_search_returns_selling_units(client: PicnicClient, api: MockApi) -> None:
-    api.queue_json(
-        {
-            "layout": {
-                "body": {
-                    "children": [
-                        {"sellingUnit": {"id": "s1001524", "name": "Affligem blond", "display_price": 865}},
-                        {"child": {"sellingUnit": {"id": "s1001525", "name": "Affligem blond 0.0"}}},
-                    ]
-                }
-            }
-        }
+def rsc(*rows: str) -> httpx.Response:
+    return httpx.Response(status_code=200, text="\n".join(rows), headers={"content-type": "text/x-component"})
+
+
+SEARCH_PAGE = rsc(
+    '0:{"_value":"$L1"}',
+    '3:I["./pages/search/search-page-content/results/index.tsx",'
+    '["client-components.container.1","shared-node_modules_x.2","shared-pages_search_results.3"],"SearchResults"]',
+    '7:I["./pages/search/search-page-params/search-page-params-provider.tsx",["shared-pages_search_params.4"],"P"]',
+    '4:["$","$L7",null,{"params":{"dayOffset":"$undefined","searchId":"search-1","searchSessionId":"session-1",'
+    '"searchTerm":"Affligem blond"},"children":["$","$L3",null,{}]}]',
+)
+
+
+def sellable(product_id: str, name: str, **fields: Any) -> dict[str, Any]:
+    return {"type": "sellable", "id": product_id, "title": {"title": name, "prefix": "$undefined"}, **fields}
+
+
+SEARCH_RESULTS = rsc(
+    '1:I["./pages/search/search-page-content/results/search-store-container.tsx",[],"C"]',
+    '0:["$","$L1",null,{"searchQuery":"Affligem blond","storeResults":{"SUPERMARKET":{"sections":['
+    + ",".join(
+        [
+            '{"id":"Bier","items":['
+            + json.dumps(
+                sellable(
+                    "s1001524",
+                    "Affligem blond",
+                    images={"primaryImage": {"imageId": "img-1"}},
+                    price={"priceValue": 8.65, "priceRanges": [{"fromQuantity": 2, "price": 800}]},
+                    suffixes=[{"type": "TEXT", "text": "6 x 300 ml"}, {"type": "ICON"}],
+                )
+            )
+            + ',{"type":"banner"}]}',
+            '{"id":"Bekijk ook","items":['
+            + json.dumps(sellable("s1001525", "Affligem blond 0.0", price={"priceRanges": []}))
+            + ","
+            + json.dumps(sellable("s1001524", "Affligem blond"))
+            + "]}",
+        ]
+    )
+    + "]}}}]",
+)
+
+
+async def test_search_runs_the_search_pages_server_action(client: PicnicClient, api: MockApi) -> None:
+    api.queue(
+        SEARCH_PAGE,
+        httpx.Response(
+            status_code=200,
+            json=samples.BOOTSTRAP | {"in_app_feature_config": {"client_component_cdn_base_url": "https://cdn.test/"}},
+        ),
+        httpx.Response(status_code=200, content=b'createServerReference("act_fetchSearchResults_abc123")'),
+        SEARCH_RESULTS,
     )
 
     results = await client.catalog.search(query="Affligem blond")
 
-    assert [unit.name for unit in results] == ["Affligem blond", "Affligem blond 0.0"]
-    assert api.last.url.path.endswith("/pages/search-page-results")
-    assert api.last.url.params["search_term"] == "Affligem blond"
-    assert "x-picnic-agent" in api.last.headers
+    assert results == [
+        SellingUnit(
+            id="s1001524",
+            name="Affligem blond",
+            image_id="img-1",
+            display_price=865,
+            unit_quantity="6 x 300 ml",
+            price_ranges=[PriceRange(price=800, from_quantity=2)],
+        ),
+        SellingUnit(id="s1001525", name="Affligem blond 0.0"),
+    ]
+    page, _, chunk, action = api.requests
+    assert page.url.params["search_term"] == "Affligem blond"
+    assert "x-picnic-agent" in page.headers
+    assert str(chunk.url) == "https://cdn.test/shared-pages_search_results.3.script.bundle"
+    assert "x-picnic-auth" not in chunk.headers
+    assert action.url.path.endswith("/pages/action/act_fetchSearchResults_abc123")
+    assert json.loads(json.loads(action.content)["params"]) == [
+        {
+            "requestedSorting": "RELEVANCE",
+            "searchId": "search-1",
+            "searchQuery": "Affligem blond",
+            "searchSessionId": "session-1",
+        }
+    ]
+
+
+async def test_search_caches_the_action_id_per_chunk(client: PicnicClient, api: MockApi) -> None:
+    bootstrap = samples.BOOTSTRAP | {"in_app_feature_config": {"client_component_cdn_base_url": "https://cdn.test"}}
+    api.queue(
+        SEARCH_PAGE,
+        httpx.Response(status_code=200, json=bootstrap),
+        httpx.Response(status_code=200, content=b"act_fetchSearchResults_abc123"),
+        SEARCH_RESULTS,
+        SEARCH_PAGE,
+        SEARCH_RESULTS,
+    )
+
+    await client.catalog.search(query="Affligem blond")
+    await client.catalog.search(query="Affligem blond")
+
+    assert len(api.requests) == 6
+
+
+async def test_search_raises_when_the_page_has_no_action(client: PicnicClient, api: MockApi) -> None:
+    api.queue(
+        SEARCH_PAGE,
+        httpx.Response(
+            status_code=200,
+            json=samples.BOOTSTRAP | {"in_app_feature_config": {"client_component_cdn_base_url": "https://cdn.test"}},
+        ),
+        httpx.Response(status_code=200, content=b"no action here"),
+    )
+
+    with pytest.raises(PicnicError, match="fetchSearchResults"):
+        await client.catalog.search(query="Affligem blond")
+
+
+@pytest.mark.parametrize(
+    ("bootstrap_config", "chunk", "message"),
+    [
+        (None, None, "client_component_cdn_base_url"),
+        ({"client_component_cdn_base_url": "https://cdn.test"}, httpx.Response(status_code=404), "404"),
+    ],
+)
+async def test_search_raises_when_the_client_chunk_is_unreachable(
+    client: PicnicClient, api: MockApi, bootstrap_config: dict[str, str] | None, chunk: Any, message: str
+) -> None:
+    api.queue(
+        SEARCH_PAGE,
+        httpx.Response(status_code=200, json=samples.BOOTSTRAP | {"in_app_feature_config": bootstrap_config}),
+    )
+    if chunk:
+        api.queue(chunk)
+
+    with pytest.raises(PicnicError, match=message):
+        await client.catalog.search(query="Affligem blond")
 
 
 async def test_get_product_details_fetches_and_parses_the_page(client: PicnicClient, api: MockApi) -> None:

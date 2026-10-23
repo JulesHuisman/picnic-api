@@ -3,15 +3,18 @@ from urllib.parse import quote
 
 from pydantic import TypeAdapter
 
-from picnic_api.domains.catalog.helpers import extract_product_details
+from picnic_api.domains.app.rsc import find_element_props
+from picnic_api.domains.app.service import AppService
+from picnic_api.domains.catalog.helpers import extract_product_details, extract_search_results
 from picnic_api.domains.catalog.models import ProductDetails, SearchSuggestion
+from picnic_api.errors import PicnicError
 from picnic_api.http_client import HttpClient
-from picnic_api.json_tree import find_all
 from picnic_api.models.common import ImageSize
 from picnic_api.models.fusion import FusionPage, SellingUnit
 
-SELLING_UNITS = TypeAdapter(list[SellingUnit])
 SEARCH_SUGGESTIONS = TypeAdapter(list[SearchSuggestion])
+SEARCH_PARAMS_MODULE = "search-page-params/search-page-params-provider.tsx"
+SEARCH_RESULTS_MODULE = "search-page-content/results/index.tsx"
 
 
 class CatalogService:
@@ -19,15 +22,38 @@ class CatalogService:
 
     def __init__(self, http: HttpClient) -> None:
         self._http = http
+        self._app = AppService(http=http)
 
     async def search(self, query: str) -> list[SellingUnit]:
-        """Searches for products matching the query."""
-        results = await self._http.send_request(
-            method="GET",
-            path=f"/pages/search-page-results?search_term={quote(query, safe='')}",
-            include_picnic_headers=True,
+        """Searches for products matching the query, in the order the app shows them.
+
+        Like the app, this fetches the search page for its search ids, then runs the page's `fetchSearchResults`
+        server action, which returns the results. Raises `PicnicError` when the page or the results change shape.
+        """
+        page = await self._app.get_rsc_page(page_id=f"search-page-results?search_term={quote(query, safe='')}")
+        params = next(
+            (props["params"] for props in find_element_props(page=page, module_path=SEARCH_PARAMS_MODULE)), None
         )
-        return SELLING_UNITS.validate_python(find_all(node=results, key="sellingUnit"))
+        action_id = await self._app.find_server_action_id(
+            page=page, module_path=SEARCH_RESULTS_MODULE, action_name="fetchSearchResults"
+        )
+        if params is None or action_id is None:
+            raise PicnicError("The search page has no search parameters or fetchSearchResults action")
+        results = await self._app.run_server_action(
+            action_id=action_id,
+            args=[
+                {
+                    "requestedSorting": "RELEVANCE",
+                    "searchId": params["searchId"],
+                    "searchQuery": query,
+                    "searchSessionId": params["searchSessionId"],
+                }
+            ],
+        )
+        root = results.rows.get("0")
+        if not (isinstance(root, list) and len(root) == 4 and root[0] == "$"):
+            raise PicnicError("Unexpected fetchSearchResults response")
+        return extract_search_results(results=root[3])
 
     async def get_suggestions(self, query: str) -> list[SearchSuggestion]:
         """Returns search suggestions for the query."""

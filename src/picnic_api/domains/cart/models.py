@@ -86,7 +86,7 @@ class Cart(PicnicModel):
     items: list[OrderLine]
     delivery_slots: list[DeliverySlot]
     selected_slot: SelectedSlot
-    slot_selector_message: PmlDocument | None
+    slot_selector_message: PmlDocument | None = None
     total_count: int
     total_price: int
     checkout_total_price: int
@@ -157,7 +157,7 @@ class AddProductsItem(PicnicModel):
 
 class GetDeliverySlotsResult(PicnicModel):
     delivery_slots: list[DeliverySlot]
-    slot_selector_message: PmlDocument | None
+    slot_selector_message: PmlDocument | None = None
     selected_slot: SelectedSlot
 
 

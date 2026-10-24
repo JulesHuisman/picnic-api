@@ -74,6 +74,7 @@ ROUTES: list[tuple[str, Call, Any, str, str, Any, bool, type | None]] = [
     ("remove product", lambda c: c.cart.remove_product_from_cart(product_id="s1"), samples.CART, "POST", "/cart/remove_product", {"product_id": "s1", "count": 1}, True, Cart),
     ("clear cart", lambda c: c.cart.clear_cart(), samples.CART, "POST", "/cart/clear", NO_BODY, True, Cart),
     ("delivery slots", lambda c: c.cart.get_delivery_slots(), {"delivery_slots": [samples.DELIVERY_SLOT], "slot_selector_message": samples.PML, "selected_slot": {"slot_id": "slot-1", "state": "IMPLICIT"}}, "GET", "/cart/delivery_slots", NO_BODY, False, GetDeliverySlotsResult),
+    ("delivery slots without message", lambda c: c.cart.get_delivery_slots(), {"delivery_slots": [samples.DELIVERY_SLOT], "selected_slot": {"slot_id": "slot-1", "state": "IMPLICIT"}}, "GET", "/cart/delivery_slots", NO_BODY, False, GetDeliverySlotsResult),
     ("set slot", lambda c: c.cart.set_delivery_slot(slot_id="slot-1"), samples.CART, "POST", "/cart/set_delivery_slot", {"slot_id": "slot-1"}, True, Cart),
     ("order status", lambda c: c.cart.get_order_status(order_id="order-1"), {"checkout_status": "FINISHED"}, "GET", "/cart/checkout/order/order-1/status", NO_BODY, False, OrderStatus),
     ("remove group", lambda c: c.cart.remove_group_from_cart(group_id="group-1"), samples.CART, "POST", "/cart/remove_group", {"group_id": "group-1"}, True, Cart),

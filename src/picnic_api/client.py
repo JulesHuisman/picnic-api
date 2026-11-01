@@ -12,7 +12,7 @@ from picnic_api.domains.payment.service import PaymentService
 from picnic_api.domains.recipe.service import RecipeService
 from picnic_api.domains.user.service import UserService
 from picnic_api.domains.user_onboarding.service import UserOnboardingService
-from picnic_api.http_client import DEFAULT_AGENT, DEFAULT_API_VERSION, DEFAULT_DEVICE_ID, HttpClient
+from picnic_api.http_client import DEFAULT_AGENT, DEFAULT_API_VERSION, HttpClient
 from picnic_api.models.common import CountryCode
 
 
@@ -21,7 +21,8 @@ class PicnicClient(HttpClient):
 
     All options are optional. `auth_key` skips the login step, `url` overrides the default
     `https://storefront-prod.<country>.picnicinternational.com/api/<api_version>`, `device_id` and `agent` set
-    the `x-picnic-did` and `x-picnic-agent` headers, and `session` injects a custom `httpx.AsyncClient`.
+    the `x-picnic-did` (derived from the auth key by default) and `x-picnic-agent` headers, and `session` injects
+    a custom `httpx.AsyncClient`.
     """
 
     def __init__(
@@ -31,7 +32,7 @@ class PicnicClient(HttpClient):
         api_version: str = DEFAULT_API_VERSION,
         auth_key: str | None = None,
         url: str | None = None,
-        device_id: str = DEFAULT_DEVICE_ID,
+        device_id: str | None = None,
         agent: str = DEFAULT_AGENT,
         session: httpx.AsyncClient | None = None,
     ) -> None:

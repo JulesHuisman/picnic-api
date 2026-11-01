@@ -41,9 +41,10 @@ from picnic_api.domains.recipe.models import (
     RemoveUserDefinedRecipeIngredientResult,
 )
 from picnic_api.domains.user.models import ProfileMenu, UpdateCheckResult, User, UserInfo
+from picnic_api.http_client import device_id_for
 from picnic_api.models.fusion import BootstrapData, FusionPage, PmlDocument
 from tests import samples
-from tests.conftest import BASE_URL, MockApi
+from tests.conftest import AUTH_KEY, BASE_URL, MockApi
 
 NO_BODY = object()
 DECLARATION = ConsentDeclaration(consent_request_text_id="text-1", consent_request_locale="nl", agreement=True)
@@ -117,7 +118,7 @@ ROUTES: list[tuple[str, Call, Any, str, str, Any, bool, type | None]] = [
     ("profile menu", lambda c: c.user.get_profile_menu(), samples.PROFILE_MENU, "GET", "/profile-menu?fetch_mgm=true", NO_BODY, True, ProfileMenu),
     ("suggestion", lambda c: c.user.submit_suggestion(suggestion="More cheese"), None, "POST", "/user/suggestion", {"suggestion": "More cheese"}, False, None),
     ("push token", lambda c: c.user.register_push_token(push_token="token", platform="firebase"), None, "POST", "/user/device/register_push", {"push_token": "token", "platform": "firebase"}, False, None),
-    ("update check", lambda c: c.user.check_for_updates(), samples.UPDATE_CHECK, "POST", "/update_check", {"device_id": "3C417201548B2E3B", "device_name": "notAvailable", "client_id": "30100", "version": "1.246.1", "device_os": "30100;1.246.1-15599;", "build_number": "15599"}, True, UpdateCheckResult),
+    ("update check", lambda c: c.user.check_for_updates(), samples.UPDATE_CHECK, "POST", "/update_check", {"device_id": device_id_for(auth_key=AUTH_KEY), "device_name": "notAvailable", "client_id": "30100", "version": "1.246.1", "device_os": "30100;1.246.1-15599;", "build_number": "15599"}, True, UpdateCheckResult),
     ("household", lambda c: c.user_onboarding.set_household_details(details={"adults": 2}), None, "POST", "/user-onboarding/household-details", {"adults": 2}, False, None),
     ("business", lambda c: c.user_onboarding.set_business_details(details={"sector": "IT"}), None, "POST", "/user-onboarding/business-details", {"sector": "IT"}, False, None),
     ("subscribe push", lambda c: c.user_onboarding.subscribe_push(topics=["deals"]), None, "POST", "/user-onboarding/subscribe-push", {"topics": ["deals"]}, False, None),

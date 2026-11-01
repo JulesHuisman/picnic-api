@@ -24,7 +24,7 @@ client = PicnicClient(
     auth_key="...",  # an existing auth key, to skip logging in
     api_version="15",  # default "15"
     url="...",  # default https://storefront-prod.<country>.picnicinternational.com/api/<api_version>
-    device_id="...",  # x-picnic-did header, default "3C417201548B2E3B"
+    device_id="...",  # x-picnic-did header, default derived from the auth key
     agent="...",  # x-picnic-agent header, default "30100;1.246.1-15599;"
 )
 ```

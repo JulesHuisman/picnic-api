@@ -2,7 +2,7 @@ import httpx
 import pytest
 
 from picnic_api import CheckoutIssueError, PicnicAuthError, PicnicClient, PicnicError
-from picnic_api.http_client import HttpClient
+from picnic_api.http_client import HttpClient, device_id_for
 from tests.conftest import BASE_URL, MockApi
 
 
@@ -20,7 +20,16 @@ def test_defaults_follow_the_country(country_code: str, url: str, language: str)
     assert http.url == url
     assert http.base_headers["Accept-Language"] == language
     assert "x-picnic-auth" not in http.base_headers
-    assert http.picnic_headers == {"x-picnic-agent": "30100;1.246.1-15599;", "x-picnic-did": "3C417201548B2E3B"}
+    assert http.picnic_headers["x-picnic-agent"] == "30100;1.246.1-15599;"
+
+
+def test_device_id_is_stable_per_auth_key_and_never_the_blocked_default() -> None:
+    first = HttpClient(auth_key="key-a").device_id
+
+    assert first == HttpClient(auth_key="key-a").device_id == device_id_for(auth_key="key-a")
+    assert first != HttpClient(auth_key="key-b").device_id
+    assert HttpClient().device_id != HttpClient().device_id
+    assert all(len(d) == 16 and d != "3C417201548B2E3B" for d in (first, HttpClient().device_id))
 
 
 def test_custom_options() -> None:

@@ -1,5 +1,7 @@
+import hashlib
 import json
 import re
+import secrets
 from typing import Any, Literal, Self
 
 import httpx
@@ -10,11 +12,20 @@ from picnic_api.models.common import CountryCode
 type HttpMethod = Literal["GET", "POST", "PUT", "DELETE"]
 
 DEFAULT_API_VERSION = "15"
-DEFAULT_DEVICE_ID = "3C417201548B2E3B"
 DEFAULT_AGENT = "30100;1.246.1-15599;"
 DEFAULT_TIMEOUT_SECONDS = 30.0
 ACCEPT_LANGUAGES: dict[str, str] = {"DE": "de", "FR": "fr"}
 ABSOLUTE_URL = re.compile(r"^https?://")
+
+
+def device_id_for(auth_key: str | None) -> str:
+    """A 16 hex digit device id for the `x-picnic-did` header, stable per auth key and random without one.
+
+    Picnic blocks the device id every client used to share, so each login needs its own.
+    """
+    if auth_key is None:
+        return secrets.token_hex(nbytes=8).upper()
+    return hashlib.sha256(auth_key.encode()).hexdigest()[:16].upper()
 
 
 def describe_error(response: httpx.Response) -> str:
@@ -38,7 +49,7 @@ class HttpClient:
         api_version: str = DEFAULT_API_VERSION,
         auth_key: str | None = None,
         url: str | None = None,
-        device_id: str = DEFAULT_DEVICE_ID,
+        device_id: str | None = None,
         agent: str = DEFAULT_AGENT,
         session: httpx.AsyncClient | None = None,
     ) -> None:
@@ -46,7 +57,7 @@ class HttpClient:
         self.api_version = api_version
         self.auth_key = auth_key
         self.url = url or f"https://storefront-prod.{country_code.lower()}.picnicinternational.com/api/{api_version}"
-        self.device_id = device_id
+        self.device_id = device_id or device_id_for(auth_key=auth_key)
         self.agent = agent
         self.session = session or httpx.AsyncClient(timeout=DEFAULT_TIMEOUT_SECONDS)
 
